@@ -1,0 +1,15 @@
+{
+  "dataDirectory": ".local/data",
+  "timezone": "Asia/Shanghai",
+  "dashboardPort": 4321,
+  "discord": {
+    "allowedUser": "",
+    "allowedChannels": []
+  },
+  "codex": {
+    "executable": "codex",
+    "timeoutMs": 240000,
+    "chat": { "model": "gpt-6.2-sol", "reasoning": "high" },
+    "memory": { "model": "gpt-6-luna", "reasoning": "high" }
+  }
+}
