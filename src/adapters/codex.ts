@@ -47,7 +47,7 @@ function execArgs(settings: ModelSettings, request: Request, schema?: string) {
 }
 
 function childEnvironment() {
-  const privateVars = new Set(['DISCORD_BOT_TOKEN', 'SOXIN_CONFIG'])
+  const privateVars = new Set(['DISCORD_BOT_TOKEN', 'DISCORD_PROXY_URL', 'SOXIN_CONFIG'])
   return Object.fromEntries(Object.entries(process.env).filter(([key]) => !privateVars.has(key.toUpperCase())))
 }
 

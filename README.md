@@ -23,6 +23,8 @@ The defaults in [soxin.example.json](soxin.example.json) store data under `.loca
 3. Copy `soxin.example.json` to `soxin.local.json`. Set `discord.allowedUser` to your Discord user ID and add your test channel IDs to `discord.allowedChannels`. Discord Developer Mode exposes the Copy ID commands.
 4. Set `DISCORD_BOT_TOKEN` in your environment or add it to the ignored `.env` file in the checkout. Start SoXin with `npm start`.
 
+If Discord needs a proxy, set `DISCORD_PROXY_URL` in `.env` to your HTTP proxy URL, for example `http://127.0.0.1:7890`. Restart SoXin to apply it to Discord REST requests, Gateway connections, and attachment downloads.
+
 The defaults are `gpt-6.2-sol` for chat and `gpt-6-luna` for memory, both at `high`. The model roles have separate settings under `codex.chat` and `codex.memory`. If the CLI rejects the model or reasoning level, update the indicated role's settings and run `npm run check:codex` again. Set `codex.executable` to the executable path if Codex is unavailable on PATH.
 
 Each allowed channel has its own active session. Use `/new` to start fresh or `/resume` to list recent sessions. Use `/resume session:<id>` to select one of those sessions. A fresh session can still recall saved records. SoXin accepts text, photos, and captions. Attach up to four PNG, JPEG, or WebP images per message, each at most 10 MiB.

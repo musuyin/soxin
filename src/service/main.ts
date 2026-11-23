@@ -33,7 +33,7 @@ async function start() {
     server.listen(config.dashboardPort, '127.0.0.1', resolve)
   })
   console.log('SoXin dashboard: http://127.0.0.1:' + config.dashboardPort)
-  discord = connectDiscord(config.discord, process.env.DISCORD_BOT_TOKEN, queue, handler, state, log)
+  discord = connectDiscord(config.discord, process.env.DISCORD_BOT_TOKEN, queue, handler, state, log, process.env.DISCORD_PROXY_URL)
 
   let stopping = false
   const stop = async () => {

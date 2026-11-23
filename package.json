@@ -17,13 +17,16 @@
   "dependencies": {
     "@modelcontextprotocol/server": "^2.4.0",
     "discord.js": "^14.28.1",
+    "global-agent": "^4.1.7",
     "lucide-react": "^1.77.0",
     "motion": "^14.14.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "undici": "^6.29.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@types/global-agent": "^3.0.0",
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

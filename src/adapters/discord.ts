@@ -1,12 +1,15 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Client, Events, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from 'discord.js'
+import { Client, Events, GatewayIntentBits, Routes, SlashCommandBuilder } from 'discord.js'
 import type { Attachment, Message } from 'discord.js'
+import { fetch } from 'undici'
+import type { ProxyAgent } from 'undici'
 import type { Config } from '../service/config.ts'
 import type { ChannelQueue, Log, TurnHandler } from '../memory/turns.ts'
 import type { ServiceState } from '../storage/service-state.ts'
 import { CodexFailure, sessionPattern } from './codex.ts'
+import { configureDiscordProxy } from './discord-proxy.ts'
 
 const maxImages = 4
 const maxBytes = 10 * 1024 * 1024
@@ -49,12 +52,12 @@ function validImage(data: Buffer, suffix: string) {
   return data.toString('ascii', 0, 4) === 'RIFF' && data.toString('ascii', 8, 12) === 'WEBP'
 }
 
-async function download(attachment: Attachment, suffix: string) {
+async function download(attachment: Attachment, suffix: string, dispatcher?: ProxyAgent) {
   const url = new URL(attachment.url)
   if (url.protocol !== 'https:' || !['cdn.discordapp.com', 'media.discordapp.net'].includes(url.hostname)) {
     throw new Error('Unexpected attachment host')
   }
-  const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(15000) })
+  const response = await fetch(url, { dispatcher, redirect: 'error', signal: AbortSignal.timeout(15000) })
   if (!response.ok || !response.body) throw new Error('Attachment unavailable')
   const reader = response.body.getReader()
   const chunks = []
@@ -77,19 +80,44 @@ async function download(attachment: Attachment, suffix: string) {
 
 type DiscordStatus = 'disabled' | 'connecting' | 'connected' | 'disconnected'
 
+function loginFailure(error: unknown, proxied: boolean) {
+  const failure = error as { message?: string, code?: string, status?: number } | undefined
+  if (/disallowed intents/i.test(failure?.message ?? '')) {
+    return 'Discord rejected Message Content Intent. Enable it for this bot in the Discord Developer Portal.'
+  }
+  if (failure?.code === 'TokenInvalid' || failure?.status === 401 || /authentication failed/i.test(failure?.message ?? '')) {
+    return 'Discord rejected the bot token. Check DISCORD_BOT_TOKEN.'
+  }
+  return proxied
+    ? 'Could not connect to Discord. Check DISCORD_PROXY_URL and whether the proxy is running.'
+    : 'Could not connect to Discord. Set DISCORD_PROXY_URL if your network requires an HTTP proxy.'
+}
+
 export function connectDiscord(
   settings: Config['discord'], token: string | undefined, queue: ChannelQueue, handler: TurnHandler,
-  state: ServiceState, log: Log,
+  state: ServiceState, log: Log, proxyUrl?: string,
 ) {
   let status: DiscordStatus = token ? 'connecting' : 'disabled'
   let accepting = true
   let client: Client | undefined
+  let dispatcher: ProxyAgent | undefined
+
+  if (token && settings.allowedUser && settings.allowedChannels.length && proxyUrl) {
+    try {
+      dispatcher = configureDiscordProxy(proxyUrl)
+    } catch {
+      status = 'disconnected'
+      token = undefined
+      log('Invalid DISCORD_PROXY_URL. Use an HTTP proxy URL such as http://127.0.0.1:7890.')
+    }
+  }
 
   if (token && settings.allowedUser && settings.allowedChannels.length) {
     const bot = new Client({
       intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
       allowedMentions: { parse: [], repliedUser: false },
     })
+    if (dispatcher) bot.rest.setAgent(dispatcher)
     client = bot
 
     async function process(message: Message<true>) {
@@ -106,7 +134,7 @@ export function connectDiscord(
           directory ??= await mkdtemp(join(tmpdir(), 'soxin-images-'))
           const path = join(directory, 'image-' + images.length + suffix)
           try {
-            await writeFile(path, await download(attachment, suffix), { mode: 0o600 })
+            await writeFile(path, await download(attachment, suffix, dispatcher), { mode: 0o600 })
             images.push(path)
           } catch {
             ignored++
@@ -193,11 +221,10 @@ export function connectDiscord(
             log('A configured Discord channel is unavailable')
           }
         }
-        const rest = new REST().setToken(token)
         for (const guild of guilds) {
           for (const command of commands) {
             try {
-              await rest.post(Routes.applicationGuildCommands(ready.application.id, guild), { body: command.toJSON() })
+              await ready.rest.post(Routes.applicationGuildCommands(ready.application.id, guild), { body: command.toJSON() })
             } catch {
               log('Discord slash command registration failed')
             }
@@ -209,9 +236,9 @@ export function connectDiscord(
     bot.on(Events.ShardResume, () => { status = 'connected' })
     bot.on(Events.ShardError, () => log('Discord connection error'))
     bot.on(Events.Error, () => log('Discord client error'))
-    void bot.login(token).catch(() => {
+    void bot.login(token).catch(error => {
       status = 'disconnected'
-      log('Discord login failed. Check the token and Message Content Intent.')
+      log(loginFailure(error, !!dispatcher))
       void bot.destroy().catch(() => {})
     })
   } else if (token) {
@@ -224,7 +251,11 @@ export function connectDiscord(
     async close() {
       accepting = false
       await queue.drain()
-      await client?.destroy()
+      try {
+        await client?.destroy()
+      } finally {
+        await dispatcher?.close()
+      }
     },
   }
 }
